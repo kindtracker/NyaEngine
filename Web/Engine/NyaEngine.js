@@ -1,6 +1,6 @@
 // import { CSM } from "https://esm.sh/three@0.185.1/examples/jsm/csm/CSM.js";
 // import { WebGPURenderer } from "https://esm.sh/three@0.185.1/webgpu.js";
-// import * as CANNON from "https://esm.sh/cannon-es";
+import * as CANNON from "https://esm.sh/cannon-es";
 import { GLTFLoader } from "https://esm.sh/three@0.185.1/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "https://esm.sh/three@0.185.1";
 
@@ -14,6 +14,10 @@ let SkyScene = null;
 let SkyCamera = null;
 let Keyboard = null;
 let Character = null;
+let World = null;
+let PhysicsClock = null;
+let CharacterBody = null;
+let CharacterOffset = null;
 
 export function EngineInitialize() {
   Scene = new THREE.Scene();
@@ -53,6 +57,17 @@ export function EngineInitialize() {
     position: new THREE.Vector3(0, 0, 0),
     Speed: 1,
   };
+
+  World = new CANNON.World({
+    gravity: new CANNON.Vec3(0, -9.82, 0),
+  });
+
+  World.allowSleep = true;
+
+  World.defaultContactMaterial.friction = 0.4;
+  World.defaultContactMaterial.restitution = 0;
+
+  PhysicsClock = new THREE.Clock();
 }
 
 export function EngineLoad() {
@@ -134,7 +149,33 @@ function EngineLoadCharacterModel() {
       Character.Model = GLTF.scene;
       Character.Model.position.set(0, 0, 0);
       Character.Model.scale.setScalar(4);
+
       Scene.add(Character.Model);
+
+      const Bounds = new THREE.Box3().setFromObject(Character.Model);
+      const Size = new THREE.Vector3();
+      const Center = new THREE.Vector3();
+
+      Bounds.getSize(Size);
+      Bounds.getCenter(Center);
+
+      CharacterOffset = Center.clone().sub(Character.Model.position);
+
+      const Shape = new CANNON.Box(
+        new CANNON.Vec3(Size.x / 2, Size.y / 2, Size.z / 2),
+      );
+
+      CharacterBody = new CANNON.Body({
+        mass: 1,
+        shape: Shape,
+        position: new CANNON.Vec3(0, 10, 0),
+        fixedRotation: true,
+        linearDamping: 0.1,
+      });
+
+      CharacterBody.updateMassProperties();
+
+      World.addBody(CharacterBody);
     },
     undefined,
     (Error) => {
@@ -144,6 +185,8 @@ function EngineLoadCharacterModel() {
 }
 
 function EngineUpdateCharacter() {
+  if (!CharacterBody) return;
+
   const Direction = new THREE.Vector3();
   const Forward = new THREE.Vector3();
   const Right = new THREE.Vector3();
@@ -154,28 +197,31 @@ function EngineUpdateCharacter() {
 
   Right.crossVectors(Forward, new THREE.Vector3(0, 1, 0)).normalize();
 
-  if (Keyboard["KeyW"]) {
-    Direction.add(Forward);
-  }
-
-  if (Keyboard["KeyS"]) {
-    Direction.sub(Forward);
-  }
-
-  if (Keyboard["KeyA"]) {
-    Direction.sub(Right);
-  }
-
-  if (Keyboard["KeyD"]) {
-    Direction.add(Right);
-  }
+  if (Keyboard["KeyW"]) Direction.add(Forward);
+  if (Keyboard["KeyS"]) Direction.sub(Forward);
+  if (Keyboard["KeyA"]) Direction.sub(Right);
+  if (Keyboard["KeyD"]) Direction.add(Right);
 
   if (Direction.lengthSq() > 0) {
     Direction.normalize();
-
-    Character.position.addScaledVector(Direction, Character.Speed);
-    Character.Model.position.copy(Character.position);
   }
+
+  const Speed = 5;
+
+  CharacterBody.velocity.x = Direction.x * Speed;
+  CharacterBody.velocity.z = Direction.z * Speed;
+}
+
+function EngineSyncCharacter() {
+  if (!CharacterBody || !Character.Model) return;
+
+  Character.Model.position.set(
+    CharacterBody.position.x - CharacterOffset.x,
+    CharacterBody.position.y - CharacterOffset.y,
+    CharacterBody.position.z - CharacterOffset.z,
+  );
+
+  Character.position.copy(Character.Model.position);
 }
 
 function EngineUpdateOrbit() {
@@ -193,8 +239,15 @@ function EngineUpdateOrbit() {
 }
 
 function EngineRunAnimate() {
+  const Delta = Math.min(PhysicsClock.getDelta(), 0.1);
+
   EngineUpdateOrbit();
   EngineUpdateCharacter();
+
+  World.step(1 / 60, Delta, 3);
+
+  EngineSyncCharacter();
+  EngineUpdateOrbit();
 
   SkyCamera.quaternion.copy(Camera.quaternion);
   SkyCamera.position.set(0, 0, 0);
@@ -218,6 +271,15 @@ function addStud(Width, Height, Depth, Color, X, Y, Z) {
   Mesh.position.set(X, Y, Z);
 
   Scene.add(Mesh);
+
+  const Body = new CANNON.Body({
+    mass: 0,
+    shape: new CANNON.Box(new CANNON.Vec3(Width / 2, Height / 2, Depth / 2)),
+    position: new CANNON.Vec3(X, Y, Z),
+  });
+
+  World.addBody(Body);
+  return Mesh;
 }
 
 window.addStud = addStud;
