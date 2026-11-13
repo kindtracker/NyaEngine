@@ -35,3 +35,13 @@ function EngineRunAnimate() {
 export function EngineRun() {
   Renderer.setAnimationLoop(EngineRunAnimate);
 }
+
+function addStud(X, Y, Z, Color, Width, Height, Depth) {
+  const Geometry = new THREE.BoxGeometry(Width, Height, Depth);
+  const Material = new THREE.MeshBasicMaterial({ color: Color });
+  const Mesh = new THREE.Mesh(Geometry, Material);
+  Mesh.position.set(X, Y, Z);
+  Scene.add(Mesh);
+}
+
+window.addStud = addStud;
