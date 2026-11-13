@@ -7,8 +7,10 @@ let Scene = null;
 let Camera = null;
 let Renderer = null;
 let Mouse = null;
-
 let Orbit = null;
+let Skybox = null;
+let SkyScene = null;
+let SkyCamera = null;
 
 export function EngineInitialize() {
   Scene = new THREE.Scene();
@@ -22,6 +24,9 @@ export function EngineInitialize() {
 
   Renderer = new THREE.WebGLRenderer();
   Mouse = { X: 0, Y: 0 };
+
+  SkyScene = new THREE.Scene();
+  SkyCamera = new THREE.PerspectiveCamera(Camera.fov, Camera.aspect, 0.1, 1000);
 
   Orbit = {
     Target: new THREE.Vector3(0, 0, 0),
@@ -49,9 +54,17 @@ export function EngineLoad() {
 
   const Loader = new THREE.TextureLoader();
   const SkyboxTexture = Loader.load("/Resources/Images/DefaultSkybox.png");
-
   SkyboxTexture.colorSpace = THREE.SRGBColorSpace;
-  Scene.background = SkyboxTexture;
+
+  const Geometry = new THREE.SphereGeometry(500, 64, 64);
+  const Material = new THREE.MeshBasicMaterial({
+    map: SkyboxTexture,
+    side: THREE.BackSide,
+    depthWrite: false,
+  });
+
+  Skybox = new THREE.Mesh(Geometry, Material);
+  SkyScene.add(Skybox);
 
   Renderer.domElement.addEventListener("contextmenu", (Event) => {
     Event.preventDefault();
@@ -125,6 +138,14 @@ function EngineUpdateOrbit() {
 
 function EngineRunAnimate() {
   EngineUpdateOrbit();
+
+  SkyCamera.quaternion.copy(Camera.quaternion);
+  SkyCamera.position.set(0, 0, 0);
+
+  Renderer.autoClear = false;
+  Renderer.clear();
+  Renderer.render(SkyScene, SkyCamera);
+  Renderer.clearDepth();
   Renderer.render(Scene, Camera);
 }
 
