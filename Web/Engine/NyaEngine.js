@@ -11,6 +11,8 @@ let Orbit = null;
 let Skybox = null;
 let SkyScene = null;
 let SkyCamera = null;
+let Keyboard = null;
+let Character = null;
 
 export function EngineInitialize() {
   Scene = new THREE.Scene();
@@ -33,19 +35,18 @@ export function EngineInitialize() {
     Radius: 10,
     Theta: 0,
     Phi: Math.PI / 2,
-
     RotateSensitivity: 0.005,
-    ZoomSensitivity: 0.1,
+    ZoomSensitivity: 0.0025,
     PanSensitivity: 0.01,
-
     MinRadius: 1,
-    MaxRadius: 100,
-
+    MaxRadius: 30,
     MinPhi: 0.01,
     MaxPhi: Math.PI - 0.01,
-
     Button: -1,
   };
+
+  Keyboard = {};
+  Character = { Speed: 1 };
 }
 
 export function EngineLoad() {
@@ -66,6 +67,8 @@ export function EngineLoad() {
   Skybox = new THREE.Mesh(Geometry, Material);
   SkyScene.add(Skybox);
 
+  Character.position = new THREE.Vector3(0, 1, 0);
+
   Renderer.domElement.addEventListener("contextmenu", (Event) => {
     Event.preventDefault();
   });
@@ -74,6 +77,24 @@ export function EngineLoad() {
     Orbit.Button = Event.button;
     Mouse.X = Event.clientX;
     Mouse.Y = Event.clientY;
+  });
+
+  Renderer.domElement.addEventListener("wheel", (Event) => {
+    Orbit.Radius *= Math.exp(Event.deltaY * Orbit.ZoomSensitivity);
+
+    Orbit.Radius = THREE.MathUtils.clamp(
+      Orbit.Radius,
+      Orbit.MinRadius,
+      Orbit.MaxRadius,
+    );
+  });
+
+  window.addEventListener("keydown", (Event) => {
+    Keyboard[Event.code] = true;
+  });
+
+  window.addEventListener("keyup", (Event) => {
+    Keyboard[Event.code] = false;
   });
 
   window.addEventListener("mouseup", () => {
@@ -89,42 +110,52 @@ export function EngineLoad() {
     Mouse.X = Event.clientX;
     Mouse.Y = Event.clientY;
 
-    if (Orbit.Button === 0) {
+    if (Orbit.Button === 2) {
       Orbit.Theta -= DeltaX * Orbit.RotateSensitivity;
       Orbit.Phi -= DeltaY * Orbit.RotateSensitivity;
 
       Orbit.Phi = THREE.MathUtils.clamp(Orbit.Phi, Orbit.MinPhi, Orbit.MaxPhi);
     }
-
-    if (Orbit.Button === 2) {
-      const Right = new THREE.Vector3();
-      const Up = new THREE.Vector3();
-
-      Camera.updateMatrixWorld();
-
-      Right.setFromMatrixColumn(Camera.matrix, 0);
-      Up.setFromMatrixColumn(Camera.matrix, 1);
-
-      const PanSpeed = Orbit.Radius * Orbit.PanSensitivity;
-
-      Orbit.Target.addScaledVector(Right, -DeltaX * PanSpeed);
-
-      Orbit.Target.addScaledVector(Up, DeltaY * PanSpeed);
-    }
-  });
-
-  Renderer.domElement.addEventListener("wheel", (Event) => {
-    Orbit.Radius *= Math.exp(Event.deltaY * Orbit.ZoomSensitivity * 0.001);
-
-    Orbit.Radius = THREE.MathUtils.clamp(
-      Orbit.Radius,
-      Orbit.MinRadius,
-      Orbit.MaxRadius,
-    );
   });
 }
 
+function EngineUpdateCharacter() {
+  const Direction = new THREE.Vector3();
+  const Forward = new THREE.Vector3();
+  const Right = new THREE.Vector3();
+
+  Camera.getWorldDirection(Forward);
+  Forward.y = 0;
+  Forward.normalize();
+
+  Right.crossVectors(Forward, new THREE.Vector3(0, 1, 0)).normalize();
+
+  if (Keyboard["KeyW"]) {
+    Direction.add(Forward);
+  }
+
+  if (Keyboard["KeyS"]) {
+    Direction.sub(Forward);
+  }
+
+  if (Keyboard["KeyA"]) {
+    Direction.sub(Right);
+  }
+
+  if (Keyboard["KeyD"]) {
+    Direction.add(Right);
+  }
+
+  if (Direction.lengthSq() > 0) {
+    Direction.normalize();
+
+    Character.position.addScaledVector(Direction, Character.Speed);
+  }
+}
+
 function EngineUpdateOrbit() {
+  Orbit.Target.copy(Character.position);
+
   const SinPhi = Math.sin(Orbit.Phi);
 
   Camera.position.set(
@@ -138,6 +169,7 @@ function EngineUpdateOrbit() {
 
 function EngineRunAnimate() {
   EngineUpdateOrbit();
+  EngineUpdateCharacter();
 
   SkyCamera.quaternion.copy(Camera.quaternion);
   SkyCamera.position.set(0, 0, 0);
