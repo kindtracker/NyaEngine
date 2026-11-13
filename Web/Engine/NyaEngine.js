@@ -18,6 +18,7 @@ let World = null;
 let PhysicsClock = null;
 let CharacterBody = null;
 let CharacterOffset = null;
+let SpawnLocation = null;
 
 export function EngineInitialize() {
   Scene = new THREE.Scene();
@@ -174,8 +175,15 @@ function EngineLoadCharacterModel() {
       });
 
       CharacterBody.updateMassProperties();
-
       World.addBody(CharacterBody);
+
+      if (SpawnLocation) {
+        CharacterBody.position.set(
+          SpawnLocation.position.x,
+          SpawnLocation.position.y,
+          SpawnLocation.position.z,
+        );
+      }
     },
     undefined,
     (Error) => {
@@ -261,6 +269,29 @@ function EngineRunAnimate() {
 
 export function EngineRun() {
   Renderer.setAnimationLoop(EngineRunAnimate);
+}
+
+export function EngineLoadProject(Project) {
+  Project = JSON.parse(Project);
+
+  for (const Instance of Project) {
+    const [X, Y, Z] = Instance.Position;
+    const [RX, RY, RZ] = Instance.Rotation;
+    const [Width, Height, Depth] = Instance.Size;
+    const Color = parseInt(Instance.Color, 16);
+
+    if (Instance.Type != "Part" && Instance.Type != "SpawnLocation") {
+      console.log(`Unknown instance: ${Instance.Type}`);
+    }
+
+    if (Instance.Type === "Part" || Instance.Type === "SpawnLocation") {
+      const Part = addStud(Width, Height, Depth, Color, X, Y, Z);
+
+      if (Instance.Type === "SpawnLocation") {
+        SpawnLocation = Part;
+      }
+    }
+  }
 }
 
 function addStud(Width, Height, Depth, Color, X, Y, Z) {
