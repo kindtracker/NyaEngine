@@ -1,6 +1,7 @@
 // import { CSM } from "https://esm.sh/three@0.185.1/examples/jsm/csm/CSM.js";
 // import { WebGPURenderer } from "https://esm.sh/three@0.185.1/webgpu.js";
 // import * as CANNON from "https://esm.sh/cannon-es";
+import { GLTFLoader } from "https://esm.sh/three@0.185.1/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "https://esm.sh/three@0.185.1";
 
 let Scene = null;
@@ -46,7 +47,12 @@ export function EngineInitialize() {
   };
 
   Keyboard = {};
-  Character = { Speed: 1 };
+
+  Character = {
+    Model: null,
+    position: new THREE.Vector3(0, 0, 0),
+    Speed: 1,
+  };
 }
 
 export function EngineLoad() {
@@ -67,7 +73,7 @@ export function EngineLoad() {
   Skybox = new THREE.Mesh(Geometry, Material);
   SkyScene.add(Skybox);
 
-  Character.position = new THREE.Vector3(0, 1, 0);
+  EngineLoadCharacterModel();
 
   Renderer.domElement.addEventListener("contextmenu", (Event) => {
     Event.preventDefault();
@@ -119,6 +125,24 @@ export function EngineLoad() {
   });
 }
 
+function EngineLoadCharacterModel() {
+  const Loader = new GLTFLoader();
+
+  Loader.load(
+    "/Resources/Models/R6.glb",
+    (GLTF) => {
+      Character.Model = GLTF.scene;
+      Character.Model.position.set(0, 0, 0);
+      Character.Model.scale.setScalar(4);
+      Scene.add(Character.Model);
+    },
+    undefined,
+    (Error) => {
+      console.error("Failed to load R6 character:", Error);
+    },
+  );
+}
+
 function EngineUpdateCharacter() {
   const Direction = new THREE.Vector3();
   const Forward = new THREE.Vector3();
@@ -150,6 +174,7 @@ function EngineUpdateCharacter() {
     Direction.normalize();
 
     Character.position.addScaledVector(Direction, Character.Speed);
+    Character.Model.position.copy(Character.position);
   }
 }
 
