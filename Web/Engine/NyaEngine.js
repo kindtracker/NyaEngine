@@ -55,17 +55,19 @@ export function EngineInitialize() {
 
   Character = {
     Model: null,
-    position: new THREE.Vector3(0, 0, 0),
-    Speed: 1,
+    Position: new THREE.Vector3(0, 0, 0),
+    Speed: 10,
   };
 
   World = new CANNON.World({
-    gravity: new CANNON.Vec3(0, -9.82, 0),
+    gravity: new CANNON.Vec3(0, -196.2, 0),
   });
 
-  World.allowSleep = true;
+  World.allowSleep = false;
 
-  World.defaultContactMaterial.friction = 0.4;
+  World.solver.iterations = 10;
+  World.solver.tolerance = 0.001;
+  World.defaultContactMaterial.friction = 0.3;
   World.defaultContactMaterial.restitution = 0;
 
   PhysicsClock = new THREE.Clock();
@@ -159,20 +161,22 @@ function EngineLoadCharacterModel() {
 
       Bounds.getSize(Size);
       Bounds.getCenter(Center);
+      const CharacterHeight = Size.y;
 
       CharacterOffset = Center.clone().sub(Character.Model.position);
 
-      const Shape = new CANNON.Box(
-        new CANNON.Vec3(Size.x / 2, Size.y / 2, Size.z / 2),
-      );
+      const Radius = Math.min(Size.x, Size.z) * 0.35;
+      const CylinderHeight = Math.max(0.01, Size.y - Radius * 2);
+
+      const Shape = new CANNON.Box(new CANNON.Vec3(4, 5.25, 1));
 
       CharacterBody = new CANNON.Body({
         mass: 1,
-        shape: Shape,
-        position: new CANNON.Vec3(0, 10, 0),
         fixedRotation: true,
-        linearDamping: 0.1,
+        linearDamping: 0.05,
       });
+
+      CharacterBody.addShape(Shape);
 
       CharacterBody.updateMassProperties();
       World.addBody(CharacterBody);
@@ -180,9 +184,11 @@ function EngineLoadCharacterModel() {
       if (SpawnLocation) {
         CharacterBody.position.set(
           SpawnLocation.position.x,
-          SpawnLocation.position.y,
+          SpawnLocation.position.y + 10,
           SpawnLocation.position.z,
         );
+      } else {
+        CharacterBody.position.set(0, 100, 0);
       }
     },
     undefined,
@@ -201,7 +207,10 @@ function EngineUpdateCharacter() {
 
   Camera.getWorldDirection(Forward);
   Forward.y = 0;
-  Forward.normalize();
+
+  if (Forward.lengthSq() > 0) {
+    Forward.normalize();
+  }
 
   Right.crossVectors(Forward, new THREE.Vector3(0, 1, 0)).normalize();
 
@@ -218,6 +227,10 @@ function EngineUpdateCharacter() {
 
   CharacterBody.velocity.x = Direction.x * Speed;
   CharacterBody.velocity.z = Direction.z * Speed;
+
+  if (Direction.lengthSq() > 0) {
+    CharacterBody.wakeUp();
+  }
 }
 
 function EngineSyncCharacter() {
@@ -229,11 +242,11 @@ function EngineSyncCharacter() {
     CharacterBody.position.z - CharacterOffset.z,
   );
 
-  Character.position.copy(Character.Model.position);
+  Character.Position.copy(Character.Model.position);
 }
 
 function EngineUpdateOrbit() {
-  Orbit.Target.copy(Character.position);
+  Orbit.Target.copy(Character.Position);
 
   const SinPhi = Math.sin(Orbit.Phi);
 
@@ -252,7 +265,7 @@ function EngineRunAnimate() {
   EngineUpdateOrbit();
   EngineUpdateCharacter();
 
-  World.step(1 / 60, Delta, 3);
+  World.step(1 / 60, Delta, 10);
 
   EngineSyncCharacter();
   EngineUpdateOrbit();
@@ -276,7 +289,9 @@ export function EngineLoadProject(Project) {
 
   for (const Instance of Project) {
     const [X, Y, Z] = Instance.Position;
-    const [RX, RY, RZ] = Instance.Rotation;
+    const [RX, RY, RZ] = Instance.Rotation.map((Angle) =>
+      THREE.MathUtils.degToRad(Angle),
+    );
     const [Width, Height, Depth] = Instance.Size;
     const Color = parseInt(Instance.Color, 16);
 
@@ -285,7 +300,7 @@ export function EngineLoadProject(Project) {
     }
 
     if (Instance.Type === "Part" || Instance.Type === "SpawnLocation") {
-      const Part = addStud(Width, Height, Depth, Color, X, Y, Z);
+      const Part = addStud(Width, Height, Depth, Color, X, Y, Z, RX, RY, RZ);
 
       if (Instance.Type === "SpawnLocation") {
         SpawnLocation = Part;
@@ -294,12 +309,14 @@ export function EngineLoadProject(Project) {
   }
 }
 
-function addStud(Width, Height, Depth, Color, X, Y, Z) {
+function addStud(Width, Height, Depth, Color, X, Y, Z, RX = 0, RY = 0, RZ = 0) {
   const Geometry = new THREE.BoxGeometry(Width, Height, Depth);
   const Material = new THREE.MeshBasicMaterial({ color: Color });
 
   const Mesh = new THREE.Mesh(Geometry, Material);
   Mesh.position.set(X, Y, Z);
+  Mesh.rotation.order = "XYZ";
+  Mesh.rotation.set(RX, RY, RZ);
 
   Scene.add(Mesh);
 
@@ -308,6 +325,7 @@ function addStud(Width, Height, Depth, Color, X, Y, Z) {
     shape: new CANNON.Box(new CANNON.Vec3(Width / 2, Height / 2, Depth / 2)),
     position: new CANNON.Vec3(X, Y, Z),
   });
+  Body.quaternion.setFromEuler(RX, RY, RZ, "XYZ");
 
   World.addBody(Body);
   return Mesh;
