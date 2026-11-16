@@ -297,20 +297,33 @@ function addStud(Width, Height, Depth, Color, X, Y, Z, RX = 0, RY = 0, RZ = 0) {
   Stud.wrapT = THREE.RepeatWrapping;
   Stud.repeat.set(Width / STUDS_PER_TILE, Depth / STUDS_PER_TILE);
 
-  const Geometry = new THREE.BoxGeometry(Width, Height, Depth);
-  const Material = new THREE.MeshBasicMaterial({
-    normalMap: Textures.StudNormal,
+  const TopBottomMaterial = new THREE.MeshBasicMaterial({
     map: Stud,
-    side: THREE.Top,
     color: Color,
   });
 
-  const Mesh = new THREE.Mesh(Geometry, Material);
+  const SideMaterial = new THREE.MeshBasicMaterial({
+    color: Color,
+  });
+
+  const Materials = [
+    SideMaterial,
+    SideMaterial,
+    TopBottomMaterial,
+    TopBottomMaterial,
+    SideMaterial,
+    SideMaterial,
+  ];
+
+  const Geometry = new THREE.BoxGeometry(Width, Height, Depth);
+
+  const Mesh = new THREE.Mesh(Geometry, Materials);
   Mesh.position.set(X, Y, Z);
   Mesh.rotation.order = "XYZ";
   Mesh.rotation.set(RX, RY, RZ);
   Mesh.castShadow = true;
   Mesh.receiveShadow = true;
+
   Scene.add(Mesh);
   return Mesh;
 }
