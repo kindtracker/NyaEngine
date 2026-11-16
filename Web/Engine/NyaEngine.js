@@ -15,6 +15,8 @@ let SpawnLocation = null;
 let Keyboard = null;
 let Mouse = null;
 let Orbit = null;
+let TextureLoader = null;
+let FBXLoader = null;
 
 const FIXED_TIME_STEP = 1 / 60;
 const MAX_SUB_STEPS = 5;
@@ -75,6 +77,9 @@ export function EngineInitialize() {
     Speed: 50,
     IsLoaded: false,
   };
+
+  TextureLoader = new THREE.TextureLoader();
+  FBXLoader = new FBXLoader();
 }
 
 export function EngineLoad() {
@@ -88,8 +93,7 @@ export function EngineLoad() {
 }
 
 function EngineLoadSkybox() {
-  const Loader = new THREE.TextureLoader();
-  const Texture = Loader.load(
+  const Texture = TextureLoader.load(
     "/Resources/Images/DefaultSkybox.png",
     undefined,
     undefined,
@@ -111,9 +115,7 @@ function EngineLoadSkybox() {
 }
 
 function EngineLoadCharacterModel() {
-  const Loader = new FBXLoader();
-
-  Loader.load(
+  FBXLoader.load(
     "/Resources/Models/R6.fbx",
 
     (FBX) => {
