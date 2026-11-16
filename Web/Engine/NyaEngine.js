@@ -1,109 +1,176 @@
+// import * as CANNON from "https://esm.sh/cannon-es";
 // import { CSM } from "https://esm.sh/three@0.185.1/examples/jsm/csm/CSM.js";
 // import { WebGPURenderer } from "https://esm.sh/three@0.185.1/webgpu.js";
-import * as CANNON from "https://esm.sh/cannon-es";
-import { GLTFLoader } from "https://esm.sh/three@0.185.1/examples/jsm/loaders/GLTFLoader.js";
+import { FBXLoader } from "https://esm.sh/three@0.185.1/examples/jsm/loaders/FBXLoader.js";
 import * as THREE from "https://esm.sh/three@0.185.1";
 
 let Scene = null;
 let Camera = null;
 let Renderer = null;
-let Mouse = null;
-let Orbit = null;
-let Skybox = null;
 let SkyScene = null;
 let SkyCamera = null;
-let Keyboard = null;
+let Skybox = null;
 let Character = null;
-let World = null;
-let PhysicsClock = null;
-let CharacterBody = null;
-let CharacterOffset = null;
 let SpawnLocation = null;
+let Keyboard = null;
+let Mouse = null;
+let Orbit = null;
+
+const FIXED_TIME_STEP = 1 / 60;
+const MAX_SUB_STEPS = 5;
+const GRAITY = -196.2;
 
 export function EngineInitialize() {
   Scene = new THREE.Scene();
 
   Camera = new THREE.PerspectiveCamera(
-    75,
+    85,
     window.innerWidth / window.innerHeight,
     0.1,
-    1000,
+    5000,
   );
 
-  Renderer = new THREE.WebGLRenderer();
-  Mouse = { X: 0, Y: 0 };
+  Renderer = new THREE.WebGLRenderer({
+    antialias: true,
+  });
+
+  Renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+  Renderer.setSize(window.innerWidth, window.innerHeight);
+
+  Mouse = {
+    X: 0,
+    Y: 0,
+  };
+
+  Keyboard = {};
 
   SkyScene = new THREE.Scene();
-  SkyCamera = new THREE.PerspectiveCamera(Camera.fov, Camera.aspect, 0.1, 1000);
+
+  SkyCamera = new THREE.PerspectiveCamera(
+    Camera.fov,
+    Camera.aspect,
+    Camera.near,
+    Camera.far,
+  );
 
   Orbit = {
-    Target: new THREE.Vector3(0, 0, 0),
-    Radius: 10,
+    Target: new THREE.Vector3(),
+    Radius: 25.6,
     Theta: 0,
     Phi: Math.PI / 2,
     RotateSensitivity: 0.005,
-    ZoomSensitivity: 0.0025,
-    PanSensitivity: 0.01,
-    MinRadius: 1,
-    MaxRadius: 30,
+    ZoomSensitivity: 0.001,
+    MinRadius: 2,
+    MaxRadius: 512,
     MinPhi: 0.01,
     MaxPhi: Math.PI - 0.01,
     Button: -1,
   };
 
-  Keyboard = {};
-
   Character = {
     Model: null,
-    Position: new THREE.Vector3(0, 0, 0),
-    Speed: 10,
+    Physics: null,
+    Position: new THREE.Vector3(),
+    Speed: 50,
+    IsLoaded: false,
   };
-
-  World = new CANNON.World({
-    gravity: new CANNON.Vec3(0, -196.2, 0),
-  });
-
-  World.allowSleep = false;
-
-  World.solver.iterations = 10;
-  World.solver.tolerance = 0.001;
-  World.defaultContactMaterial.friction = 0.3;
-  World.defaultContactMaterial.restitution = 0;
-
-  PhysicsClock = new THREE.Clock();
 }
 
 export function EngineLoad() {
-  Renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(Renderer.domElement);
 
+  EngineLoadSkybox();
+  EngineLoadCharacterModel();
+  EngineInitializeInput();
+
+  window.addEventListener("resize", EngineResize);
+}
+
+function EngineLoadSkybox() {
   const Loader = new THREE.TextureLoader();
-  const SkyboxTexture = Loader.load("/Resources/Images/DefaultSkybox.png");
-  SkyboxTexture.colorSpace = THREE.SRGBColorSpace;
+  const Texture = Loader.load(
+    "/Resources/Images/DefaultSkybox.png",
+    undefined,
+    undefined,
+    (Error) => {
+      console.error("Failed to load skybox:", Error);
+    },
+  );
+  Texture.colorSpace = THREE.SRGBColorSpace;
 
   const Geometry = new THREE.SphereGeometry(500, 64, 64);
   const Material = new THREE.MeshBasicMaterial({
-    map: SkyboxTexture,
+    map: Texture,
     side: THREE.BackSide,
     depthWrite: false,
   });
 
   Skybox = new THREE.Mesh(Geometry, Material);
   SkyScene.add(Skybox);
+}
 
-  EngineLoadCharacterModel();
+function EngineLoadCharacterModel() {
+  const Loader = new FBXLoader();
 
-  Renderer.domElement.addEventListener("contextmenu", (Event) => {
+  Loader.load(
+    "/Resources/Models/R6.fbx",
+
+    (FBX) => {
+      if (Character.Model) {
+        Scene.remove(Character.Model);
+      }
+
+      Character.Model = FBX;
+      Character.Model.position.set(0, 0, 0);
+      Character.Model.updateMatrixWorld(true);
+
+      Scene.add(Character.Model);
+    },
+
+    undefined,
+
+    (Error) => {
+      console.error("Failed to load character model:", Error);
+    },
+  );
+}
+
+function EngineUpdateCharacter() {}
+
+function EngineSyncCharacter() {}
+
+function EngineUpdateOrbit() {
+  if (!Character) return;
+
+  Orbit.Target.copy(Character.Position);
+  Orbit.Target.y += 2.56;
+
+  const SinPhi = Math.sin(Orbit.Phi);
+  Camera.position.set(
+    Orbit.Target.x + Orbit.Radius * SinPhi * Math.sin(Orbit.Theta),
+    Orbit.Target.y + Orbit.Radius * Math.cos(Orbit.Phi),
+    Orbit.Target.z + Orbit.Radius * SinPhi * Math.cos(Orbit.Theta),
+  );
+
+  Camera.lookAt(Orbit.Target);
+}
+
+function EngineInitializeInput() {
+  const Element = Renderer.domElement;
+
+  Element.addEventListener("contextmenu", (Event) => {
     Event.preventDefault();
   });
 
-  Renderer.domElement.addEventListener("mousedown", (Event) => {
+  Element.addEventListener("mousedown", (Event) => {
     Orbit.Button = Event.button;
+
     Mouse.X = Event.clientX;
     Mouse.Y = Event.clientY;
   });
 
-  Renderer.domElement.addEventListener("wheel", (Event) => {
+  Element.addEventListener("wheel", (Event) => {
     Orbit.Radius *= Math.exp(Event.deltaY * Orbit.ZoomSensitivity);
 
     Orbit.Radius = THREE.MathUtils.clamp(
@@ -111,6 +178,26 @@ export function EngineLoad() {
       Orbit.MinRadius,
       Orbit.MaxRadius,
     );
+  });
+
+  window.addEventListener("mouseup", () => {
+    Orbit.Button = -1;
+  });
+
+  window.addEventListener("mousemove", (Event) => {
+    if (Orbit.Button !== 2) return;
+
+    const DeltaX = Event.clientX - Mouse.X;
+    const DeltaY = Event.clientY - Mouse.Y;
+
+    Mouse.X = Event.clientX;
+    Mouse.Y = Event.clientY;
+
+    Orbit.Theta -= DeltaX * Orbit.RotateSensitivity;
+
+    Orbit.Phi -= DeltaY * Orbit.RotateSensitivity;
+
+    Orbit.Phi = THREE.MathUtils.clamp(Orbit.Phi, Orbit.MinPhi, Orbit.MaxPhi);
   });
 
   window.addEventListener("keydown", (Event) => {
@@ -121,158 +208,28 @@ export function EngineLoad() {
     Keyboard[Event.code] = false;
   });
 
-  window.addEventListener("mouseup", () => {
+  window.addEventListener("blur", () => {
+    Keyboard = {};
     Orbit.Button = -1;
   });
-
-  window.addEventListener("mousemove", (Event) => {
-    if (Orbit.Button === -1) return;
-
-    const DeltaX = Event.clientX - Mouse.X;
-    const DeltaY = Event.clientY - Mouse.Y;
-
-    Mouse.X = Event.clientX;
-    Mouse.Y = Event.clientY;
-
-    if (Orbit.Button === 2) {
-      Orbit.Theta -= DeltaX * Orbit.RotateSensitivity;
-      Orbit.Phi -= DeltaY * Orbit.RotateSensitivity;
-
-      Orbit.Phi = THREE.MathUtils.clamp(Orbit.Phi, Orbit.MinPhi, Orbit.MaxPhi);
-    }
-  });
 }
 
-function EngineLoadCharacterModel() {
-  const Loader = new GLTFLoader();
+function EngineResize() {
+  if (!Camera || !Renderer) return;
 
-  Loader.load(
-    "/Resources/Models/R6.glb",
-    (GLTF) => {
-      Character.Model = GLTF.scene;
-      Character.Model.position.set(0, 0, 0);
-      Character.Model.scale.setScalar(4);
-
-      Scene.add(Character.Model);
-
-      const Bounds = new THREE.Box3().setFromObject(Character.Model);
-      const Size = new THREE.Vector3();
-      const Center = new THREE.Vector3();
-
-      Bounds.getSize(Size);
-      Bounds.getCenter(Center);
-      const CharacterHeight = Size.y;
-
-      CharacterOffset = Center.clone().sub(Character.Model.position);
-
-      const Radius = Math.min(Size.x, Size.z) * 0.35;
-      const CylinderHeight = Math.max(0.01, Size.y - Radius * 2);
-
-      const Shape = new CANNON.Box(new CANNON.Vec3(4, 5.25, 1));
-
-      CharacterBody = new CANNON.Body({
-        mass: 1,
-        fixedRotation: true,
-        linearDamping: 0.05,
-      });
-
-      CharacterBody.addShape(Shape);
-
-      CharacterBody.updateMassProperties();
-      World.addBody(CharacterBody);
-
-      if (SpawnLocation) {
-        CharacterBody.position.set(
-          SpawnLocation.position.x,
-          SpawnLocation.position.y + 10,
-          SpawnLocation.position.z,
-        );
-      } else {
-        CharacterBody.position.set(0, 100, 0);
-      }
-    },
-    undefined,
-    (Error) => {
-      console.error("Failed to load R6 character:", Error);
-    },
-  );
-}
-
-function EngineUpdateCharacter() {
-  if (!CharacterBody) return;
-
-  const Direction = new THREE.Vector3();
-  const Forward = new THREE.Vector3();
-  const Right = new THREE.Vector3();
-
-  Camera.getWorldDirection(Forward);
-  Forward.y = 0;
-
-  if (Forward.lengthSq() > 0) {
-    Forward.normalize();
-  }
-
-  Right.crossVectors(Forward, new THREE.Vector3(0, 1, 0)).normalize();
-
-  if (Keyboard["KeyW"]) Direction.add(Forward);
-  if (Keyboard["KeyS"]) Direction.sub(Forward);
-  if (Keyboard["KeyA"]) Direction.sub(Right);
-  if (Keyboard["KeyD"]) Direction.add(Right);
-
-  if (Direction.lengthSq() > 0) {
-    Direction.normalize();
-  }
-
-  const Speed = 5;
-
-  CharacterBody.velocity.x = Direction.x * Speed;
-  CharacterBody.velocity.z = Direction.z * Speed;
-
-  if (Direction.lengthSq() > 0) {
-    CharacterBody.wakeUp();
-  }
-}
-
-function EngineSyncCharacter() {
-  if (!CharacterBody || !Character.Model) return;
-
-  Character.Model.position.set(
-    CharacterBody.position.x - CharacterOffset.x,
-    CharacterBody.position.y - CharacterOffset.y,
-    CharacterBody.position.z - CharacterOffset.z,
-  );
-
-  Character.Position.copy(Character.Model.position);
-}
-
-function EngineUpdateOrbit() {
-  Orbit.Target.copy(Character.Position);
-
-  const SinPhi = Math.sin(Orbit.Phi);
-
-  Camera.position.set(
-    Orbit.Target.x + Orbit.Radius * SinPhi * Math.sin(Orbit.Theta),
-    Orbit.Target.y + Orbit.Radius * Math.cos(Orbit.Phi),
-    Orbit.Target.z + Orbit.Radius * SinPhi * Math.cos(Orbit.Theta),
-  );
-
-  Camera.lookAt(Orbit.Target);
+  Camera.aspect = window.innerWidth / window.innerHeight;
+  Camera.updateProjectionMatrix();
+  SkyCamera.aspect = Camera.aspect;
+  SkyCamera.updateProjectionMatrix();
+  Renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
 function EngineRunAnimate() {
-  const Delta = Math.min(PhysicsClock.getDelta(), 0.1);
-
-  EngineUpdateOrbit();
   EngineUpdateCharacter();
-
-  World.step(1 / 60, Delta, 10);
-
-  EngineSyncCharacter();
   EngineUpdateOrbit();
 
   SkyCamera.quaternion.copy(Camera.quaternion);
   SkyCamera.position.set(0, 0, 0);
-
   Renderer.autoClear = false;
   Renderer.clear();
   Renderer.render(SkyScene, SkyCamera);
@@ -284,50 +241,51 @@ export function EngineRun() {
   Renderer.setAnimationLoop(EngineRunAnimate);
 }
 
+export function EngineStop() {
+  if (!Renderer) return;
+
+  Renderer.setAnimationLoop(null);
+}
+
 export function EngineLoadProject(Project) {
-  Project = JSON.parse(Project);
+  if (typeof Project === "string") {
+    Project = JSON.parse(Project);
+  }
 
   for (const Instance of Project) {
+    if (Instance.Type !== "Part" && Instance.Type !== "SpawnLocation") {
+      console.warn(`Unknown instance: ${Instance.Type}`);
+
+      continue;
+    }
+
     const [X, Y, Z] = Instance.Position;
     const [RX, RY, RZ] = Instance.Rotation.map((Angle) =>
       THREE.MathUtils.degToRad(Angle),
     );
     const [Width, Height, Depth] = Instance.Size;
     const Color = parseInt(Instance.Color, 16);
+    const Part = addStud(Width, Height, Depth, Color, X, Y, Z, RX, RY, RZ);
 
-    if (Instance.Type != "Part" && Instance.Type != "SpawnLocation") {
-      console.log(`Unknown instance: ${Instance.Type}`);
-    }
-
-    if (Instance.Type === "Part" || Instance.Type === "SpawnLocation") {
-      const Part = addStud(Width, Height, Depth, Color, X, Y, Z, RX, RY, RZ);
-
-      if (Instance.Type === "SpawnLocation") {
-        SpawnLocation = Part;
-      }
+    if (Instance.Type === "SpawnLocation") {
+      SpawnLocation = Part;
     }
   }
 }
 
 function addStud(Width, Height, Depth, Color, X, Y, Z, RX = 0, RY = 0, RZ = 0) {
   const Geometry = new THREE.BoxGeometry(Width, Height, Depth);
-  const Material = new THREE.MeshBasicMaterial({ color: Color });
+  const Material = new THREE.MeshBasicMaterial({
+    color: Color,
+  });
 
   const Mesh = new THREE.Mesh(Geometry, Material);
   Mesh.position.set(X, Y, Z);
   Mesh.rotation.order = "XYZ";
   Mesh.rotation.set(RX, RY, RZ);
-
+  Mesh.castShadow = true;
+  Mesh.receiveShadow = true;
   Scene.add(Mesh);
-
-  const Body = new CANNON.Body({
-    mass: 0,
-    shape: new CANNON.Box(new CANNON.Vec3(Width / 2, Height / 2, Depth / 2)),
-    position: new CANNON.Vec3(X, Y, Z),
-  });
-  Body.quaternion.setFromEuler(RX, RY, RZ, "XYZ");
-
-  World.addBody(Body);
   return Mesh;
 }
 
