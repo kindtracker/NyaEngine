@@ -16,10 +16,15 @@ let Keyboard = null;
 let Mouse = null;
 let Orbit = null;
 let TextureLoader = null;
-let FBXLoader = null;
+let MeshLoader = null;
+let Textures = null;
 
-const FIXED_TIME_STEP = 1 / 60;
-const MAX_SUB_STEPS = 5;
+const PHYSICS_TPS = 1 / 24;
+const UPDATE_TPS = 1 / 24;
+const NETWORK_TPS = 1 / 16;
+
+const PHYSICS_SUB_STEPS = 4;
+const STUDS_PER_TILE = 4;
 const GRAITY = -196.2;
 
 export function EngineInitialize() {
@@ -79,12 +84,15 @@ export function EngineInitialize() {
   };
 
   TextureLoader = new THREE.TextureLoader();
-  FBXLoader = new FBXLoader();
+  MeshLoader = new FBXLoader();
+
+  Textures = {};
 }
 
-export function EngineLoad() {
+export async function EngineLoad() {
   document.body.appendChild(Renderer.domElement);
 
+  await EngineLoadTextures();
   EngineLoadSkybox();
   EngineLoadCharacterModel();
   EngineInitializeInput();
@@ -92,20 +100,28 @@ export function EngineLoad() {
   window.addEventListener("resize", EngineResize);
 }
 
-function EngineLoadSkybox() {
-  const Texture = TextureLoader.load(
-    "/Resources/Images/DefaultSkybox.png",
-    undefined,
-    undefined,
-    (Error) => {
-      console.error("Failed to load skybox:", Error);
-    },
-  );
-  Texture.colorSpace = THREE.SRGBColorSpace;
+async function EngineLoadTextures() {
+  const TextureList = ["Skybox", "Stud", "StudNormal"];
 
+  for (const TextureName of TextureList) {
+    const TexturePath = `/Resources/Images/${TextureName}.png`;
+    const Texture = await TextureLoader.load(
+      TexturePath,
+      undefined,
+      undefined,
+      (Error) => {
+        console.error(`Failed to load ${TextureName}.png:`, Error);
+      },
+    );
+    Texture.colorSpace = THREE.SRGBColorSpace;
+    Textures[TextureName] = Texture;
+  }
+}
+
+function EngineLoadSkybox() {
   const Geometry = new THREE.SphereGeometry(500, 64, 64);
   const Material = new THREE.MeshBasicMaterial({
-    map: Texture,
+    map: Textures.Skybox,
     side: THREE.BackSide,
     depthWrite: false,
   });
@@ -115,7 +131,7 @@ function EngineLoadSkybox() {
 }
 
 function EngineLoadCharacterModel() {
-  FBXLoader.load(
+  MeshLoader.load(
     "/Resources/Models/R6.fbx",
 
     (FBX) => {
@@ -276,8 +292,16 @@ export function EngineLoadProject(Project) {
 }
 
 function addStud(Width, Height, Depth, Color, X, Y, Z, RX = 0, RY = 0, RZ = 0) {
+  const Stud = Textures.Stud.clone();
+  Stud.wrapS = THREE.RepeatWrapping;
+  Stud.wrapT = THREE.RepeatWrapping;
+  Stud.repeat.set(Width / STUDS_PER_TILE, Depth / STUDS_PER_TILE);
+
   const Geometry = new THREE.BoxGeometry(Width, Height, Depth);
   const Material = new THREE.MeshBasicMaterial({
+    normalMap: Textures.StudNormal,
+    map: Stud,
+    side: THREE.Top,
     color: Color,
   });
 
