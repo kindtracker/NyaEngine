@@ -21,14 +21,20 @@ let TextureLoader = null;
 let MeshLoader = null;
 let Textures = null;
 let PhysicsMeshes = null;
+let LastPhysicsTickTime = null;
+let PhysicsAccumulator = null;
 
-const PHYSICS_TPS = 1 / 24;
+const PHYSICS_TPS = 1 / 60;
 const UPDATE_TPS = 1 / 24;
 const NETWORK_TPS = 1 / 16;
 
 const PHYSICS_SUB_STEPS = 4;
 const STUDS_PER_TILE = 4;
 const GRAITY = -196.2;
+const WALK_SPEED = 16;
+const JUMP_POWER = 50;
+const ROTATION_SPEED = 10;
+const CLIMB_SPEED = 32;
 
 export async function EngineInitialize() {
   Scene = new THREE.Scene();
@@ -80,7 +86,8 @@ export async function EngineInitialize() {
     Model: null,
     Physics: null,
     Position: new THREE.Vector3(),
-    Speed: 50,
+    WalkSpeed: WALK_SPEED,
+    JumpPower: JUMP_POWER,
     IsLoaded: false,
   };
 
@@ -98,6 +105,9 @@ export async function EngineInitialize() {
   World.timestep = PHYSICS_TPS;
 
   PhysicsMeshes = [];
+
+  LastPhysicsTickTime = 0;
+  PhysicsAccumulator = 0;
 }
 
 export async function EngineLoad() {
@@ -293,16 +303,49 @@ function EngineResize() {
   Renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-function EngineRunAnimate() {
-  World.step();
+function EngineUpdateInput() {
+  const Body = Character.Physics.Body;
+  const Velocity = Body.linvel();
 
+  const Direction = new THREE.Vector3();
+
+  if (Keyboard.KeyW) Direction.z -= 1;
+  if (Keyboard.KeyS) Direction.z += 1;
+  if (Keyboard.KeyA) Direction.x -= 1;
+  if (Keyboard.KeyD) Direction.x += 1;
+
+  Direction.normalize();
+
+  Body.setLinvel(
+    {
+      x: Direction.x * Character.WalkSpeed,
+      y: Velocity.y,
+      z: Direction.z * Character.WalkSpeed,
+    },
+    true,
+  );
+}
+
+function EngineRunAnimate() {
+  const Now = performance.now() / 1000;
+  const DeltaTime = Now - LastPhysicsTickTime;
+
+  LastPhysicsTickTime = Now;
+  PhysicsAccumulator += DeltaTime;
+
+  EngineUpdateInput();
   EngineUpdateCharacter();
-  EngineUpdateOrbit();
-  EngineSyncCharacter();
+
+  while (PhysicsAccumulator >= PHYSICS_TPS) {
+    World.step();
+    PhysicsAccumulator -= PHYSICS_TPS;
+  }
+
   EngineSyncPhysics();
+  EngineSyncCharacter();
+  EngineUpdateOrbit();
 
   SkyCamera.quaternion.copy(Camera.quaternion);
-  // SkyCamera.position.copy(Camera.position);
   Renderer.autoClear = false;
   Renderer.clear();
   Renderer.render(SkyScene, SkyCamera);
