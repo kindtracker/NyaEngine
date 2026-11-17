@@ -303,24 +303,82 @@ function EngineResize() {
   Renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-function EngineUpdateInput() {
+function EngineUpdateInput(DeltaTime) {
+  if (!Character.Physics) return;
+
   const Body = Character.Physics.Body;
   const Velocity = Body.linvel();
 
-  const Direction = new THREE.Vector3();
+  const Speed = Character.WalkSpeed;
+  const TurnSpeed = ROTATION_SPEED;
 
-  if (Keyboard.KeyW) Direction.z -= 1;
-  if (Keyboard.KeyS) Direction.z += 1;
-  if (Keyboard.KeyA) Direction.x -= 1;
-  if (Keyboard.KeyD) Direction.x += 1;
+  const CameraDirection = new THREE.Vector3();
+  Camera.getWorldDirection(CameraDirection);
+  CameraDirection.y = 0;
+  CameraDirection.normalize();
 
-  Direction.normalize();
+  const CameraYaw = Math.atan2(-CameraDirection.x, -CameraDirection.z);
+
+  let MoveX = 0;
+  let MoveZ = 0;
+  if (Keyboard["KeyW"]) MoveZ -= 1;
+  if (Keyboard["KeyS"]) MoveZ += 1;
+  if (Keyboard["KeyA"]) MoveX -= 1;
+  if (Keyboard["KeyD"]) MoveX += 1;
+
+  const HasMovement = MoveX !== 0 || MoveZ !== 0;
+  const Forward = new THREE.Vector3(
+    -Math.sin(CameraYaw),
+    0,
+    -Math.cos(CameraYaw),
+  );
+
+  const Right = new THREE.Vector3(Math.cos(CameraYaw), 0, -Math.sin(CameraYaw));
+  const Movement = new THREE.Vector3()
+    .addScaledVector(Forward, -MoveZ)
+    .addScaledVector(Right, MoveX);
+
+  if (Movement.lengthSq() > 0) {
+    Movement.normalize();
+  }
+
+  if (HasMovement) {
+    const TargetYaw = Math.atan2(-Movement.x, -Movement.z);
+
+    const BodyRotation = Body.rotation();
+
+    const CurrentQuaternion = new THREE.Quaternion(
+      BodyRotation.x,
+      BodyRotation.y,
+      BodyRotation.z,
+      BodyRotation.w,
+    );
+
+    const CurrentYaw = new THREE.Euler().setFromQuaternion(
+      CurrentQuaternion,
+      "YXZ",
+    ).y;
+
+    const Difference = Math.atan2(
+      Math.sin(TargetYaw - CurrentYaw),
+      Math.cos(TargetYaw - CurrentYaw),
+    );
+
+    const NewYaw = CurrentYaw + Difference * Math.min(1, TurnSpeed * DeltaTime);
+
+    const Rotation = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      NewYaw,
+    );
+
+    Body.setRotation(Rotation, true);
+  }
 
   Body.setLinvel(
     {
-      x: Direction.x * Character.WalkSpeed,
+      x: Movement.x * Speed,
       y: Velocity.y,
-      z: Direction.z * Character.WalkSpeed,
+      z: Movement.z * Speed,
     },
     true,
   );
@@ -333,7 +391,7 @@ function EngineRunAnimate() {
   LastPhysicsTickTime = Now;
   PhysicsAccumulator += DeltaTime;
 
-  EngineUpdateInput();
+  EngineUpdateInput(DeltaTime);
   EngineUpdateCharacter();
 
   while (PhysicsAccumulator >= PHYSICS_TPS) {
