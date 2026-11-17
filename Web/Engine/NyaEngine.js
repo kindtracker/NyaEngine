@@ -2,8 +2,10 @@
 // import { CSM } from "https://esm.sh/three@0.185.1/examples/jsm/csm/CSM.js";
 // import { WebGPURenderer } from "https://esm.sh/three@0.185.1/webgpu.js";
 import { FBXLoader } from "https://esm.sh/three@0.185.1/examples/jsm/loaders/FBXLoader.js";
+import RAPIER from "https://esm.sh/@dimforge/rapier3d-compat";
 import * as THREE from "https://esm.sh/three@0.185.1";
 
+let World = null;
 let Scene = null;
 let Camera = null;
 let Renderer = null;
@@ -18,6 +20,7 @@ let Orbit = null;
 let TextureLoader = null;
 let MeshLoader = null;
 let Textures = null;
+let PhysicsMeshes = null;
 
 const PHYSICS_TPS = 1 / 24;
 const UPDATE_TPS = 1 / 24;
@@ -27,7 +30,7 @@ const PHYSICS_SUB_STEPS = 4;
 const STUDS_PER_TILE = 4;
 const GRAITY = -196.2;
 
-export function EngineInitialize() {
+export async function EngineInitialize() {
   Scene = new THREE.Scene();
 
   Camera = new THREE.PerspectiveCamera(
@@ -40,9 +43,7 @@ export function EngineInitialize() {
   Renderer = new THREE.WebGLRenderer({
     antialias: true,
   });
-
   Renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
   Renderer.setSize(window.innerWidth, window.innerHeight);
 
   Mouse = {
@@ -87,6 +88,16 @@ export function EngineInitialize() {
   MeshLoader = new FBXLoader();
 
   Textures = {};
+
+  await RAPIER.init();
+  World = new RAPIER.World({
+    x: 0,
+    y: GRAITY,
+    z: 0,
+  });
+  World.timestep = PHYSICS_TPS;
+
+  PhysicsMeshes = [];
 }
 
 export async function EngineLoad() {
@@ -119,7 +130,7 @@ async function EngineLoadTextures() {
 }
 
 function EngineLoadSkybox() {
-  const Geometry = new THREE.SphereGeometry(500, 64, 64);
+  const Geometry = new THREE.SphereGeometry(16, 32, 32);
   const Material = new THREE.MeshBasicMaterial({
     map: Textures.Skybox,
     side: THREE.BackSide,
@@ -128,6 +139,8 @@ function EngineLoadSkybox() {
 
   Skybox = new THREE.Mesh(Geometry, Material);
   SkyScene.add(Skybox);
+
+  SkyCamera.position.set(0, 0, 0);
 }
 
 function EngineLoadCharacterModel() {
@@ -245,9 +258,10 @@ function EngineResize() {
 function EngineRunAnimate() {
   EngineUpdateCharacter();
   EngineUpdateOrbit();
+  EngineSyncPhysics();
 
   SkyCamera.quaternion.copy(Camera.quaternion);
-  SkyCamera.position.set(0, 0, 0);
+  // SkyCamera.position.copy(Camera.position);
   Renderer.autoClear = false;
   Renderer.clear();
   Renderer.render(SkyScene, SkyCamera);
@@ -291,6 +305,60 @@ export function EngineLoadProject(Project) {
   }
 }
 
+function EngineCreatePhysics(Mesh, Mass = 1) {
+  const { x, y, z } = Mesh.position;
+
+  const BodyDesc =
+    Mass === 0 ? RAPIER.RigidBodyDesc.fixed() : RAPIER.RigidBodyDesc.dynamic();
+
+  const Body = World.createRigidBody(BodyDesc);
+  Body.setTranslation({ x, y, z }, true);
+
+  const Rotation = Mesh.quaternion;
+  Body.setRotation(
+    {
+      x: Rotation.x,
+      y: Rotation.y,
+      z: Rotation.z,
+      w: Rotation.w,
+    },
+    true,
+  );
+
+  const Geometry = Mesh.geometry.parameters;
+  const ColliderDesc = RAPIER.ColliderDesc.cuboid(
+    Geometry.width / 2,
+    Geometry.height / 2,
+    Geometry.depth / 2,
+  );
+
+  if (Mass > 0) {
+    ColliderDesc.setMass(Mass);
+  }
+
+  const Collider = World.createCollider(ColliderDesc, Body);
+  Mesh.userData.Physics = {
+    Body,
+    Collider,
+  };
+
+  PhysicsMeshes.push(Mesh);
+
+  return Mesh.userData.Physics;
+}
+
+function EngineSyncPhysics() {
+  for (const Mesh of PhysicsMeshes) {
+    const Body = Mesh.userData.Physics.Body;
+
+    const Position = Body.translation();
+    const Rotation = Body.rotation();
+
+    Mesh.position.set(Position.x, Position.y, Position.z);
+    Mesh.quaternion.set(Rotation.x, Rotation.y, Rotation.z, Rotation.w);
+  }
+}
+
 function addStud(Width, Height, Depth, Color, X, Y, Z, RX = 0, RY = 0, RZ = 0) {
   const Stud = Textures.Stud.clone();
   Stud.wrapS = THREE.RepeatWrapping;
@@ -325,6 +393,10 @@ function addStud(Width, Height, Depth, Color, X, Y, Z, RX = 0, RY = 0, RZ = 0) {
   Mesh.receiveShadow = true;
 
   Scene.add(Mesh);
+
+  EngineCreatePhysics(Mesh, 0);
+  PhysicsMeshes.push(Mesh);
+
   return Mesh;
 }
 

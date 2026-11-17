@@ -5,8 +5,8 @@ import {
   EngineLoadProject,
 } from "/Engine/NyaEngine.js";
 
-EngineInitialize();
-EngineLoad();
+await EngineInitialize();
+await EngineLoad();
 
 const ProjectResponse = await fetch("/Projects/Baseplate.json");
 const Project = await ProjectResponse.text();
