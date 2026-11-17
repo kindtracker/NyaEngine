@@ -143,6 +143,26 @@ function EngineLoadSkybox() {
   SkyCamera.position.set(0, 0, 0);
 }
 
+function EngineCreateCharacterPhysics() {
+  const BodyDesc = RAPIER.RigidBodyDesc.dynamic()
+    .setTranslation(
+      Character.Position.x,
+      Character.Position.y,
+      Character.Position.z,
+    )
+    .lockRotations()
+    .setCanSleep(false);
+
+  const Body = World.createRigidBody(BodyDesc);
+  const ColliderDesc = RAPIER.ColliderDesc.cuboid(1, 2, 0.5)
+    .setFriction(0.9)
+    .setRestitution(0);
+
+  World.createCollider(ColliderDesc, Body);
+
+  Character.Physics = { Body };
+}
+
 function EngineLoadCharacterModel() {
   MeshLoader.load(
     "/Resources/Models/R6.fbx",
@@ -157,6 +177,9 @@ function EngineLoadCharacterModel() {
       Character.Model.updateMatrixWorld(true);
 
       Scene.add(Character.Model);
+
+      Character.Position.set(0, 5, 0);
+      EngineCreateCharacterPhysics();
     },
 
     undefined,
@@ -169,7 +192,22 @@ function EngineLoadCharacterModel() {
 
 function EngineUpdateCharacter() {}
 
-function EngineSyncCharacter() {}
+function EngineSyncCharacter() {
+  if (!Character.Physics || !Character.Model) return;
+
+  const Body = Character.Physics.Body;
+  const Position = Body.translation();
+  const Rotation = Body.rotation();
+
+  Character.Position.set(Position.x, Position.y, Position.z);
+  Character.Model.position.set(Position.x, Position.y, Position.z);
+  Character.Model.quaternion.set(
+    Rotation.x,
+    Rotation.y,
+    Rotation.z,
+    Rotation.w,
+  );
+}
 
 function EngineUpdateOrbit() {
   if (!Character) return;
@@ -256,8 +294,11 @@ function EngineResize() {
 }
 
 function EngineRunAnimate() {
+  World.step();
+
   EngineUpdateCharacter();
   EngineUpdateOrbit();
+  EngineSyncCharacter();
   EngineSyncPhysics();
 
   SkyCamera.quaternion.copy(Camera.quaternion);
