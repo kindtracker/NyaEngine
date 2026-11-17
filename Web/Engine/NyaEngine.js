@@ -250,6 +250,19 @@ function EngineUpdateOrbit() {
     Orbit.Target.z + Orbit.Radius * SinPhi * Math.cos(Orbit.Theta),
   );
 
+  if (KeyboardToggle["ShiftLeft"]) {
+    const Offset = 1.5;
+
+    const Right = new THREE.Vector3(
+      Math.cos(Orbit.Theta),
+      0,
+      -Math.sin(Orbit.Theta),
+    );
+
+    Camera.position.addScaledVector(Right, Offset);
+    Orbit.Target.addScaledVector(Right, Offset);
+  }
+
   Camera.lookAt(Orbit.Target);
 }
 
@@ -267,15 +280,21 @@ function EngineInitializeInput() {
     Mouse.Y = Event.clientY;
   });
 
-  Element.addEventListener("wheel", (Event) => {
-    Orbit.Radius *= Math.exp(Event.deltaY * Orbit.ZoomSensitivity);
+  document.body.addEventListener(
+    "wheel",
+    (Event) => {
+      Event.preventDefault();
 
-    Orbit.Radius = THREE.MathUtils.clamp(
-      Orbit.Radius,
-      Orbit.MinRadius,
-      Orbit.MaxRadius,
-    );
-  });
+      Orbit.Radius *= Math.exp(Event.deltaY * Orbit.ZoomSensitivity);
+
+      Orbit.Radius = THREE.MathUtils.clamp(
+        Orbit.Radius,
+        Orbit.MinRadius,
+        Orbit.MaxRadius,
+      );
+    },
+    { passive: false },
+  );
 
   window.addEventListener("mouseup", () => {
     Orbit.Button = -1;
@@ -309,7 +328,7 @@ function EngineInitializeInput() {
 
     if (Event.code == "ShiftLeft") {
       if (KeyboardToggle["ShiftLeft"]) {
-        document.body.requestPointerLock();
+        Renderer.domElement.requestPointerLock();
       } else {
         document.exitPointerLock();
       }
