@@ -15,6 +15,7 @@ let Skybox = null;
 let Character = null;
 let SpawnLocation = null;
 let Keyboard = null;
+let KeyboardToggle = null;
 let Mouse = null;
 let Orbit = null;
 let TextureLoader = null;
@@ -58,6 +59,7 @@ export async function EngineInitialize() {
   };
 
   Keyboard = {};
+  KeyboardToggle = {};
 
   SkyScene = new THREE.Scene();
 
@@ -88,7 +90,7 @@ export async function EngineInitialize() {
     Position: new THREE.Vector3(),
     WalkSpeed: WALK_SPEED,
     JumpPower: JUMP_POWER,
-    IsLoaded: false,
+    OnGround: false,
   };
 
   TextureLoader = new THREE.TextureLoader();
@@ -200,7 +202,23 @@ function EngineLoadCharacterModel() {
   );
 }
 
-function EngineUpdateCharacter() {}
+function EngineUpdateCharacter() {
+  const Body = Character.Physics.Body;
+
+  if (KeyboardToggle["ShiftLeft"]) {
+    const CameraDirection = new THREE.Vector3();
+    Camera.getWorldDirection(CameraDirection);
+    CameraDirection.y = 0;
+    CameraDirection.normalize();
+
+    const CameraYaw = Math.atan2(-CameraDirection.x, -CameraDirection.z);
+
+    const Rotation = new THREE.Quaternion();
+    Rotation.setFromAxisAngle(new THREE.Vector3(0, 1, 0), CameraYaw);
+
+    Body.setRotation(Rotation, true);
+  }
+}
 
 function EngineSyncCharacter() {
   if (!Character.Physics || !Character.Model) return;
@@ -264,23 +282,38 @@ function EngineInitializeInput() {
   });
 
   window.addEventListener("mousemove", (Event) => {
-    if (Orbit.Button !== 2) return;
+    if (Orbit.Button !== 2 && !KeyboardToggle["ShiftLeft"]) return;
 
-    const DeltaX = Event.clientX - Mouse.X;
-    const DeltaY = Event.clientY - Mouse.Y;
+    let DeltaX;
+    let DeltaY;
+
+    if (document.pointerLockElement) {
+      DeltaX = Event.movementX;
+      DeltaY = Event.movementY;
+    } else {
+      DeltaX = Event.clientX - Mouse.X;
+      DeltaY = Event.clientY - Mouse.Y;
+    }
 
     Mouse.X = Event.clientX;
     Mouse.Y = Event.clientY;
 
     Orbit.Theta -= DeltaX * Orbit.RotateSensitivity;
-
     Orbit.Phi -= DeltaY * Orbit.RotateSensitivity;
-
     Orbit.Phi = THREE.MathUtils.clamp(Orbit.Phi, Orbit.MinPhi, Orbit.MaxPhi);
   });
 
   window.addEventListener("keydown", (Event) => {
     Keyboard[Event.code] = true;
+    KeyboardToggle[Event.code] = !KeyboardToggle[Event.code];
+
+    if (Event.code == "ShiftLeft") {
+      if (KeyboardToggle["ShiftLeft"]) {
+        document.body.requestPointerLock();
+      } else {
+        document.exitPointerLock();
+      }
+    }
   });
 
   window.addEventListener("keyup", (Event) => {
@@ -301,6 +334,28 @@ function EngineResize() {
   SkyCamera.aspect = Camera.aspect;
   SkyCamera.updateProjectionMatrix();
   Renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function EngineUpdateCharacterState() {
+  const Body = Character.Physics.Body;
+  const Position = Body.translation();
+
+  const Ray = new RAPIER.Ray(
+    { x: Position.x, y: Position.y, z: Position.z },
+    { x: 0, y: -1, z: 0 },
+  );
+
+  const Hit = World.castRay(
+    Ray,
+    2.1,
+    true,
+    undefined,
+    undefined,
+    undefined,
+    Body,
+  );
+
+  Character.OnGround = Hit !== null;
 }
 
 function EngineUpdateInput(DeltaTime) {
@@ -325,6 +380,9 @@ function EngineUpdateInput(DeltaTime) {
   if (Keyboard["KeyS"]) MoveZ += 1;
   if (Keyboard["KeyA"]) MoveX -= 1;
   if (Keyboard["KeyD"]) MoveX += 1;
+  if (Keyboard["Space"] && Character.OnGround) {
+    Velocity.y = JUMP_POWER;
+  }
 
   const HasMovement = MoveX !== 0 || MoveZ !== 0;
   const Forward = new THREE.Vector3(
@@ -364,7 +422,7 @@ function EngineUpdateInput(DeltaTime) {
       Math.cos(TargetYaw - CurrentYaw),
     );
 
-    const NewYaw = CurrentYaw + Difference * Math.min(1, TurnSpeed * DeltaTime);
+    let NewYaw = CurrentYaw + Difference * Math.min(1, TurnSpeed * DeltaTime);
 
     const Rotation = new THREE.Quaternion().setFromAxisAngle(
       new THREE.Vector3(0, 1, 0),
@@ -391,6 +449,7 @@ function EngineRunAnimate() {
   LastPhysicsTickTime = Now;
   PhysicsAccumulator += DeltaTime;
 
+  EngineUpdateCharacterState();
   EngineUpdateInput(DeltaTime);
   EngineUpdateCharacter();
 
