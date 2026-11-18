@@ -24,6 +24,7 @@ let Textures = null;
 let PhysicsMeshes = null;
 let LastPhysicsTickTime = null;
 let PhysicsAccumulator = null;
+let Animation = null;
 
 const PHYSICS_TPS = 1 / 60;
 const UPDATE_TPS = 1 / 24;
@@ -35,7 +36,7 @@ const GRAITY = -196.2;
 const WALK_SPEED = 16;
 const JUMP_POWER = 50;
 const ROTATION_SPEED = 10;
-const CLIMB_SPEED = 32;
+const CLIMB_SPEED = 64;
 
 export async function EngineInitialize() {
   Scene = new THREE.Scene();
@@ -91,6 +92,7 @@ export async function EngineInitialize() {
     WalkSpeed: WALK_SPEED,
     JumpPower: JUMP_POWER,
     OnGround: false,
+    Walking: false,
   };
 
   TextureLoader = new THREE.TextureLoader();
@@ -110,6 +112,11 @@ export async function EngineInitialize() {
 
   LastPhysicsTickTime = 0;
   PhysicsAccumulator = 0;
+
+  Animation = {
+    Rest: {},
+    Time: 0,
+  };
 }
 
 export async function EngineLoad() {
@@ -142,7 +149,7 @@ async function EngineLoadTextures() {
 }
 
 function EngineLoadSkybox() {
-  const Geometry = new THREE.SphereGeometry(16, 32, 32);
+  const Geometry = new THREE.SphereGeometry(16, 64, 32);
   const Material = new THREE.MeshBasicMaterial({
     map: Textures.Skybox,
     side: THREE.BackSide,
@@ -175,6 +182,24 @@ function EngineCreateCharacterPhysics() {
   Character.Physics = { Body };
 }
 
+function EngineToPascalCase(Name) {
+  return Name.split("_")
+    .map((Part) => Part.charAt(0).toUpperCase() + Part.slice(1).toLowerCase())
+    .join("");
+}
+
+function EngineGetBone(Model, Name) {
+  let Result = null;
+
+  Model.traverse((Object) => {
+    if (Object.isBone && EngineToPascalCase(Object.name) === Name) {
+      Result = Object;
+    }
+  });
+
+  return Result;
+}
+
 function EngineLoadCharacterModel() {
   MeshLoader.load(
     "/Resources/Models/R6.fbx",
@@ -187,6 +212,16 @@ function EngineLoadCharacterModel() {
       Character.Model = FBX;
       Character.Model.position.set(0, 0, 0);
       Character.Model.updateMatrixWorld(true);
+
+      Character.Model.traverse((Bone) => {
+        if (!Bone.isBone) return;
+
+        Animation.Rest[Bone.name] = {
+          x: Bone.rotation.x,
+          y: Bone.rotation.y,
+          z: Bone.rotation.z,
+        };
+      });
 
       Scene.add(Character.Model);
 
@@ -218,6 +253,60 @@ function EngineUpdateCharacter() {
 
     Body.setRotation(Rotation, true);
   }
+}
+
+function EngineSetBoneRotation(Bone, Axis, Target, Speed, DeltaTime) {
+  if (!Bone || !["x", "y", "z"].includes(Axis)) return;
+
+  const Rest = Animation.Rest[Bone.name]?.[Axis] ?? 0;
+  const TargetRotation = Rest + THREE.MathUtils.degToRad(Target);
+  const Alpha = 1 - Math.exp(-Speed * DeltaTime);
+
+  Bone.rotation[Axis] = THREE.MathUtils.lerp(
+    Bone.rotation[Axis],
+    TargetRotation,
+    Alpha,
+  );
+}
+
+function EngineUpdateCharacterAnimation(DeltaTime) {
+  Animation.Time += DeltaTime;
+
+  const RightArm = EngineGetBone(Character.Model, "RightArm");
+  const LeftArm = EngineGetBone(Character.Model, "LeftArm");
+  const RightLeg = EngineGetBone(Character.Model, "RightLeg");
+  const LeftLeg = EngineGetBone(Character.Model, "LeftLeg");
+
+  const Now = Math.sin(Animation.Time * 6) * 45;
+
+  EngineSetBoneRotation(
+    RightArm,
+    "x",
+    Character.Walking ? Now : 0,
+    64,
+    DeltaTime,
+  );
+  EngineSetBoneRotation(
+    LeftArm,
+    "x",
+    Character.Walking ? -Now : 0,
+    64,
+    DeltaTime,
+  );
+  EngineSetBoneRotation(
+    RightLeg,
+    "x",
+    Character.Walking ? -Now : 0,
+    64,
+    DeltaTime,
+  );
+  EngineSetBoneRotation(
+    LeftLeg,
+    "x",
+    Character.Walking ? Now : 0,
+    64,
+    DeltaTime,
+  );
 }
 
 function EngineSyncCharacter() {
@@ -375,6 +464,12 @@ function EngineUpdateCharacterState() {
   );
 
   Character.OnGround = Hit !== null;
+
+  Character.Walking =
+    Keyboard["KeyA"] ||
+    Keyboard["KeyW"] ||
+    Keyboard["KeyS"] ||
+    Keyboard["KeyD"];
 }
 
 function EngineUpdateInput(DeltaTime) {
@@ -471,6 +566,7 @@ function EngineRunAnimate() {
   EngineUpdateCharacterState();
   EngineUpdateInput(DeltaTime);
   EngineUpdateCharacter();
+  EngineUpdateCharacterAnimation(DeltaTime);
 
   while (PhysicsAccumulator >= PHYSICS_TPS) {
     World.step();
